@@ -1,8 +1,8 @@
 #!/bin/bash
 
 ### CONFIG ###
-SOURCE_DIR="/home"
-DESTINATION_DIR="/mnt/Backup/"
+SOURCE_DIR="/home/"
+DESTINATION_DIR="/mnt/Backup/home/"
 
 RSYNC_EXCLUDES="--exclude='.*' --exclude='Downloads/'"
 
