@@ -143,6 +143,7 @@ FILES_TO_DELETE=$(echo "$DRY_RUN_OUTPUT" | grep deleting || true) # extract the 
 
                 if [ $? == 0 ] ; then
                     runRsyncCommand "$RSYNC_COMMAND"
+                    echo "$FILES_TO_DELETE" > "$FILES_TO_DELETE_FILE"
                     saveApproval
                     break
                 fi
