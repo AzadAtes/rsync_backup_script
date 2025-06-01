@@ -4,7 +4,7 @@
 SOURCE_DIR="$HOME/"
 DESTINATION_DIR="/mnt/Backup/home/"
 
-RSYNC_EXCLUDES="--exclude=/.cache/ --exclude=/.Trash-*/ --exclude=/Downloads/ --exclude=/.??*"
+RSYNC_EXCLUDES="--exclude=/.cache/ --exclude=/.Trash-*/ --exclude=/Downloads/ --exclude=/lost+found/ --exclude=/.*"
 
 RSYNC_COMMAND="rsync -av $RSYNC_EXCLUDES $SOURCE_DIR $DESTINATION_DIR"
 RSYNC_COMMAND_WITH_DELETE="$RSYNC_COMMAND --delete"
@@ -73,7 +73,7 @@ runRsyncCommand () {
     checkDestinationSpace
     COMMAND_OUTPUT=$($1 2>&1) # 2>&1 redirects stderr to stdout so we can store it in our variable
     echo -e "$COMMAND_OUTPUT"
-    printf "%s\n" "$1" > "$LOGS_DIR/rsyncLog_$(date +"%Y-%m-%d_%H:%M:%S").txt"
+    printf "%s\n" "$COMMAND_OUTPUT" > "$LOGS_DIR/rsyncLog_$(date +"%Y-%m-%d_%H:%M:%S").txt"
     cleanupOldLogs
 
     if [ $? == 0 ] ; then
@@ -151,7 +151,6 @@ FILES_TO_DELETE=$(echo "$DRY_RUN_OUTPUT" | grep deleting || true) # extract the 
                 if [ $? == 0 ] ; then
                     if [ "$input" = "Delete" ] ; then
                         runRsyncCommand "$RSYNC_COMMAND_WITH_DELETE"
-                        echo "$RSYNC_COMMAND" > "$APPROVED_COMMAND_FILE"
                         break
                     else
                         kdialog --title "Backup Script" --sorry "Invalid input."
@@ -165,7 +164,6 @@ FILES_TO_DELETE=$(echo "$DRY_RUN_OUTPUT" | grep deleting || true) # extract the 
                 if [ $? == 0 ] ; then
                     runRsyncCommand "$RSYNC_COMMAND"
                     echo "$FILES_TO_DELETE" > "$FILES_TO_DELETE_FILE"
-                    echo "$RSYNC_COMMAND" > "$APPROVED_COMMAND_FILE"
                     break
                 fi
                 ;;
@@ -183,4 +181,5 @@ FILES_TO_DELETE=$(echo "$DRY_RUN_OUTPUT" | grep deleting || true) # extract the 
             esac
         done
     fi
+    echo "$RSYNC_COMMAND" > "$APPROVED_COMMAND_FILE"
 }
