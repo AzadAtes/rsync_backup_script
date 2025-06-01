@@ -10,22 +10,7 @@ RSYNC_COMMAND="rsync -av $RSYNC_EXCLUDES $SOURCE_DIR $DESTINATION_DIR"
 RSYNC_COMMAND_WITH_DELETE="$RSYNC_COMMAND --delete"
 RSYNC_COMMAND_WITH_DELETE_DRY_RUN="$RSYNC_COMMAND_WITH_DELETE -n"
 
-### DEFINE FUNCTIONS ###
-runRsyncCommand () {
-    COMMAND_OUTPUT=$($1 2>&1) # 2>&1 redirects stderr to stdout so we can store it in our variable
-    echo -e "$COMMAND_OUTPUT"
-    printf "%s\n" "$1" > "$LOGS_DIR/rsyncLog_$(date +"%Y-%m-%d_%H:%M:%S").txt"
-
-    if [ $? == 0 ] ; then
-        kdialog --title "Backup Script Successful" --icon dialog-ok --passivepopup "$LOGS_DIR" "$COMMAND_OUTPUT" 10
-    else
-        kdialog --title "Backup Script FAILED" --error "Command failed:\n$1\n\nCheck the Logs or Details for more Information:\n$LOGS_DIR" "$COMMAND_OUTPUT"
-    fi
-}
-
-saveApproval () {
-    echo "$RSYNC_COMMAND" > "$APPROVED_COMMAND_FILE"
-}
+MAX_LOGS=100
 
 ### SETUP ###
 {
@@ -58,6 +43,34 @@ saveApproval () {
     mkdir -p "$STATE_DIR"
     touch "$FILES_TO_DELETE_FILE"
     touch "$APPROVED_COMMAND_FILE"
+}
+
+### DEFINE FUNCTIONS ###
+cleanupOldLogs () {
+    LOG_FILES=("$LOGS_DIR"/rsyncLog_*.txt)
+    NUM_LOGS=${#LOG_FILES[@]}
+
+    if (( NUM_LOGS > MAX_LOGS )); then
+        # Sort logs by modification time and delete oldest
+        ls -1t "$LOGS_DIR"/rsyncLog_*.txt | tail -n +$((MAX_LOGS + 1)) | xargs -d '\n' rm -f --
+    fi
+}
+
+runRsyncCommand () {
+    COMMAND_OUTPUT=$($1 2>&1) # 2>&1 redirects stderr to stdout so we can store it in our variable
+    echo -e "$COMMAND_OUTPUT"
+    printf "%s\n" "$1" > "$LOGS_DIR/rsyncLog_$(date +"%Y-%m-%d_%H:%M:%S").txt"
+    cleanupOldLogs
+
+    if [ $? == 0 ] ; then
+        kdialog --title "Backup Script Successful" --icon dialog-ok --passivepopup "$LOGS_DIR" "$COMMAND_OUTPUT" 10
+    else
+        kdialog --title "Backup Script FAILED" --error "Command failed:\n$1\n\nCheck the Logs or Details for more Information:\n$LOGS_DIR" "$COMMAND_OUTPUT"
+    fi
+}
+
+saveApproval () {
+    echo "$RSYNC_COMMAND" > "$APPROVED_COMMAND_FILE"
 }
 
 ### DRY RUN ###
