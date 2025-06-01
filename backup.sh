@@ -11,6 +11,7 @@ RSYNC_COMMAND_WITH_DELETE="$RSYNC_COMMAND --delete"
 RSYNC_COMMAND_WITH_DELETE_DRY_RUN="$RSYNC_COMMAND_WITH_DELETE -n"
 
 MAX_LOGS=100
+LOW_SPACE_THRESHOLD_GB=50
 
 ### SETUP ###
 {
@@ -46,6 +47,18 @@ MAX_LOGS=100
 }
 
 ### DEFINE FUNCTIONS ###
+checkDestinationSpace () {
+    LOW_SPACE_THRESHOLD_KB=$((LOW_SPACE_THRESHOLD_GB * 1024 * 1024))
+    AVAILABLE_KB=$(df -Pk "$DESTINATION_DIR" | awk 'NR==2 { print $4 }')
+
+    if [ "$AVAILABLE_KB" -lt "$LOW_SPACE_THRESHOLD_KB" ]; then
+        AVAILABLE_GB_DECIMAL=$(awk "BEGIN { printf \"%.1f\", $AVAILABLE_KB / 1000000 }")
+        kdialog --title "Backup Script Warning" \
+            --icon dialog-warning \
+            --passivepopup "The destination drive has only ${AVAILABLE_GB_DECIMAL} GB of free space available." 10
+    fi
+}
+
 cleanupOldLogs () {
     LOG_FILES=("$LOGS_DIR"/rsyncLog_*.txt)
     NUM_LOGS=${#LOG_FILES[@]}
@@ -57,6 +70,7 @@ cleanupOldLogs () {
 }
 
 runRsyncCommand () {
+    checkDestinationSpace
     COMMAND_OUTPUT=$($1 2>&1) # 2>&1 redirects stderr to stdout so we can store it in our variable
     echo -e "$COMMAND_OUTPUT"
     printf "%s\n" "$1" > "$LOGS_DIR/rsyncLog_$(date +"%Y-%m-%d_%H:%M:%S").txt"
@@ -67,10 +81,6 @@ runRsyncCommand () {
     else
         kdialog --title "Backup Script FAILED" --error "Command failed:\n$1\n\nCheck the Logs or Details for more Information:\n$LOGS_DIR" "$COMMAND_OUTPUT"
     fi
-}
-
-saveApproval () {
-    echo "$RSYNC_COMMAND" > "$APPROVED_COMMAND_FILE"
 }
 
 ### DRY RUN ###
@@ -126,7 +136,6 @@ FILES_TO_DELETE=$(echo "$DRY_RUN_OUTPUT" | grep deleting || true) # extract the 
         runRsyncCommand "$RSYNC_COMMAND"
     else
         while : ; do
-
             # ask for user interaction
             kdialog --title "Backup Script" \
             --warningyesnocancel "There are files present in the Destination which are missing in the Source\nDo you want to DELETE these files only present in the Destination?\n\nSource = $SOURCE_DIR\nDestination = $DESTINATION_DIR" \
@@ -142,8 +151,7 @@ FILES_TO_DELETE=$(echo "$DRY_RUN_OUTPUT" | grep deleting || true) # extract the 
                 if [ $? == 0 ] ; then
                     if [ "$input" = "Delete" ] ; then
                         runRsyncCommand "$RSYNC_COMMAND_WITH_DELETE"
-                        saveApproval
-                        
+                        echo "$RSYNC_COMMAND" > "$APPROVED_COMMAND_FILE"
                         break
                     else
                         kdialog --title "Backup Script" --sorry "Invalid input."
@@ -157,7 +165,7 @@ FILES_TO_DELETE=$(echo "$DRY_RUN_OUTPUT" | grep deleting || true) # extract the 
                 if [ $? == 0 ] ; then
                     runRsyncCommand "$RSYNC_COMMAND"
                     echo "$FILES_TO_DELETE" > "$FILES_TO_DELETE_FILE"
-                    saveApproval
+                    echo "$RSYNC_COMMAND" > "$APPROVED_COMMAND_FILE"
                     break
                 fi
                 ;;
