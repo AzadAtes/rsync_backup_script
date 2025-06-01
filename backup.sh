@@ -38,10 +38,8 @@ FILES_TO_DELETE_FILE="$SCRIPT_DIR/state/filesToDelete.txt"
 APPROVED_COMMAND_FILE="$STATE_DIR/approvedCommand.txt"
 
 # create directories and files if they don't exist
-mkdir -p "$LOGS_DIR"
-mkdir -p "$STATE_DIR"
-touch "$FILES_TO_DELETE_FILE"
-touch "$APPROVED_COMMAND_FILE"
+mkdir -p "$LOGS_DIR" "$STATE_DIR"
+touch "$FILES_TO_DELETE_FILE" "$APPROVED_COMMAND_FILE"
 
 ### DEFINE FUNCTIONS ###
 checkDestinationSpace () {
@@ -96,7 +94,7 @@ FILES_TO_DELETE=$(echo "$DRY_RUN_OUTPUT" | grep deleting || true) # extract the 
 
 ### USER APPROVAL ###
 
-# prompt user for approval only if the destination directory has changed or hasn't been approved before
+# prompt user for approval only if the rsync command hasn't been approved before
 if [ ! -f "$APPROVED_COMMAND_FILE" ] || ! grep -Fxq "$RSYNC_COMMAND" "$APPROVED_COMMAND_FILE"; then
 
     kdialog --title "Rsync Data Backup" --warningcontinuecancel \
