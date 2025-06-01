@@ -1,46 +1,42 @@
 #!/bin/bash
 
-SOURCE_DIR="/home/az/IdeaProjects/os_stuff/linux/rsyncScript/source/"
-DESTINATION_DIR="/home/az/IdeaProjects/os_stuff/linux/rsyncScript/destination/"
+### CONFIG ###
+SOURCE_DIR="/home"
+DESTINATION_DIR="/mnt/Backup/"
 
-# Check if kdialog is installed
-if ! command -v kdialog &> /dev/null; then
-    echo "Error: kdialog is not installed. Please install kdialog."
-    notify-send -a "Backup Script" --urgency=critical "Error: kdialog is not installed." "Backup canceled. Please install kdialog."
-    exit 1
-fi
+RSYNC_EXCLUDES="--exclude='.*' --exclude='Downloads/'"
 
-SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-DESTINATION_APPROVED_MARKER="$SCRIPT_DIR/state/destinationApprovedMarker"
+RSYNC_COMMAND="rsync -av $RSYNC_EXCLUDES $SOURCE_DIR $DESTINATION_DIR"
+RSYNC_COMMAND_WITH_DELETE="$RSYNC_COMMAND --delete"
+RSYNC_COMMAND_WITH_DELETE_DRY_RUN="$RSYNC_COMMAND_WITH_DELETE -n"
 
-echo $DESTINATION_APPROVED_MARKER
+### DEFINE FUNCTIONS ###
+runRsyncCommand () {
+    COMMAND_OUTPUT=$($1 2>&1) # 2>&1 redirects stderr to stdout so we can store it in our variable
+    echo -e "$COMMAND_OUTPUT"
+    printf "%s\n" "$1" > "$LOGS_DIR/rsyncLog_$(date +"%Y-%m-%d_%H:%M:%S").txt"
 
-# Prompt user for approval on first sync if the destination directory contains files,
-# unless approval has already been granted (indicated by the presence of the marker file).
-if [ ! -f "$DESTINATION_APPROVED_MARKER" ]; then
-    DESTINATION_CONTENTS=$(ls -A "$DESTINATION_DIR")
-
-    if [ -n "$DESTINATION_CONTENTS" ]; then
-        kdialog --title "Rsync Data Backup" --warningcontinuecancel \
-        "Destination is not empty\nDestination: '$DESTINATION_DIR'\n\nDo you wish to continue anyway?" \
-        "Contents of the destination directory:\n\n$DESTINATION_CONTENTS"
-
-        if [ $? -ne 0 ]; then
-            kdialog --title "Backup Script" --icon dialog-cancel --passivepopup "Backup Script Canceled." 10
-            exit 1
-        fi
+    if [ $? == 0 ] ; then
+        kdialog --title "Backup Script Successful" --icon dialog-ok --passivepopup "$LOGS_DIR" "$COMMAND_OUTPUT" 10
+    else
+        kdialog --title "Backup Script FAILED" --error "Command failed:\n$1\n\nCheck the Logs or Details for more Information:\n$LOGS_DIR" "$COMMAND_OUTPUT"
     fi
-fi
+}
 
+saveApproval () {
+    echo "$RSYNC_COMMAND" > "$APPROVED_COMMAND_FILE"
+}
+
+### SETUP ###
 {
-    trap 'ERR_MSG="Script failed on command:\n$BASH_COMMAND"; echo "$ERR_MSG" >> "$LOGS_DIR/rsync_error.log"; kdialog --title "Backup Script FAILED" --error "$ERR_MSG"; exit 1' ERR
+    trap 'ERR_MSG="ERROR! Script failed on command:\n\n$BASH_COMMAND"; echo "$ERR_MSG" >> "$LOGS_DIR/rsync_error.log"; kdialog --title "Backup Script FAILED" --error "$ERR_MSG"; exit 1' ERR
 
-    RSYNC_COMMAND="rsync -av $SOURCE_DIR $DESTINATION_DIR"
-    RSYNC_COMMAND_WITH_DELETE="$RSYNC_COMMAND --delete"
-    RSYNC_COMMAND_WITH_DELETE_DRY_RUN="$RSYNC_COMMAND_WITH_DELETE -n"
-
-    LOGS_DIR="$SCRIPT_DIR/logs"
-    FILES_TO_DELETE_FILE="$SCRIPT_DIR/state/filesToDelete.txt"
+    ### Check if kdialog is installed ###
+    if ! command -v kdialog &> /dev/null; then
+        echo "Error: kdialog is not installed. Please install kdialog."
+        notify-send -a "Backup Script" --urgency=critical "Error: kdialog is not installed." "Backup canceled. Please install kdialog."
+        exit 1
+    fi
 
     # ensure source and destination directories exist
     for DIR in "$SOURCE_DIR" "$DESTINATION_DIR"; do
@@ -50,26 +46,65 @@ fi
         fi
     done
 
+    # define directories and files
+    SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+    LOGS_DIR="$SCRIPT_DIR/logs"
+    STATE_DIR="$SCRIPT_DIR/state"
+    FILES_TO_DELETE_FILE="$SCRIPT_DIR/state/filesToDelete.txt"
+    APPROVED_COMMAND_FILE="$STATE_DIR/approvedCommand.txt"
+
     # create directories and files if they don't exist
     mkdir -p "$LOGS_DIR"
+    mkdir -p "$STATE_DIR"
     touch "$FILES_TO_DELETE_FILE"
-
-    # make a dry run
-    DRY_RUN_OUTPUT=$($RSYNC_COMMAND_WITH_DELETE_DRY_RUN)
-    PREV_FILES_TO_DELETE=$(cat "$FILES_TO_DELETE_FILE") # load files that would be deleted by --delete option from previous run
-    FILES_TO_DELETE=$(echo "$DRY_RUN_OUTPUT" | grep deleting || true) # extract the files that would be deleted from the dry run output
+    touch "$APPROVED_COMMAND_FILE"
 }
 
-runRsyncCommand () {
-    COMMAND_OUTPUT=$($1 2>&1) # 2>&1 redirects stderr to stdout so we can store it in our variable
-    if [ $? == 0 ] ; then
-        kdialog --title "Backup Script Successful" --icon dialog-ok --passivepopup "$LOGS_DIR" "$COMMAND_OUTPUT" 10
-    else
-        kdialog --title "Backup Script FAILED" --error "Command failed:\n$1\n\nCheck the Logs or Details for more Information:\n$LOGS_DIR" "$COMMAND_OUTPUT"
+### DRY RUN ###
+DRY_RUN_OUTPUT=$($RSYNC_COMMAND_WITH_DELETE_DRY_RUN)
+
+if [ -z "$DRY_RUN_OUTPUT" ]; then
+    kdialog --title "Backup Script" --error "Dry run failed or returned no output. Check permissions or paths."
+    exit 1
+fi
+
+echo -e "$DRY_RUN_OUTPUT"
+
+PREV_FILES_TO_DELETE=$(cat "$FILES_TO_DELETE_FILE") # load files that would be deleted by --delete option from previous run
+FILES_TO_DELETE=$(echo "$DRY_RUN_OUTPUT" | grep deleting || true) # extract the files that would be deleted from the dry run output
+
+### USER APPROVAL ###
+{
+    trap '' ERR
+
+    # prompt user for approval only if the destination directory has changed or hasn't been approved before
+    if [ ! -f "$APPROVED_COMMAND_FILE" ] || ! grep -Fxq "$RSYNC_COMMAND" "$APPROVED_COMMAND_FILE"; then
+
+        kdialog --title "Rsync Data Backup" --warningcontinuecancel \
+        "The following Rsync command will be executed:\n\n$RSYNC_COMMAND\n\nDo you wish to continue?"
+
+        if [ $? -ne 0 ]; then
+            kdialog --title "Backup Script" --icon dialog-cancel --passivepopup "Backup Script Canceled." 10
+            exit 1
+        fi
+
+        DESTINATION_CONTENTS=$(ls -A "$DESTINATION_DIR")
+
+        # Prompt user for additional approval if the destination is not empty
+        if [ -n "$DESTINATION_CONTENTS" ]; then
+            kdialog --title "Rsync Data Backup" --warningcontinuecancel \
+            "Destination is not empty\nDestination: '$DESTINATION_DIR'\n\nDo you wish to continue anyway?" \
+            "Contents of the destination directory:\n\n$DESTINATION_CONTENTS"
+
+            if [ $? -ne 0 ]; then
+                kdialog --title "Backup Script" --icon dialog-cancel --passivepopup "Backup Script Canceled." 10
+                exit 1
+            fi
+        fi
     fi
-    echo "$1" > $LOGS_DIR/rsyncLog_$(date +"%Y-%m-%d_%H:%M:%S").txt # save rsync command output to a log file
 }
 
+### USER INTERACTION ###
 {
     trap '' ERR
 
@@ -94,7 +129,8 @@ runRsyncCommand () {
                 if [ $? == 0 ] ; then
                     if [ "$input" = "Delete" ] ; then
                         runRsyncCommand "$RSYNC_COMMAND_WITH_DELETE"
-                        touch "$DESTINATION_APPROVED_MARKER"
+                        saveApproval
+                        
                         break
                     else
                         kdialog --title "Backup Script" --sorry "Invalid input."
@@ -107,8 +143,7 @@ runRsyncCommand () {
 
                 if [ $? == 0 ] ; then
                     runRsyncCommand "$RSYNC_COMMAND"
-                    echo "$FILES_TO_DELETE" > $FILES_TO_DELETE_FILE # override files to delete from previous run
-                    touch "$DESTINATION_APPROVED_MARKER"
+                    saveApproval
                     break
                 fi
                 ;;
