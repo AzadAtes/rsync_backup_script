@@ -1,10 +1,10 @@
 #!/bin/bash
 
 ### CONFIG ###
-SOURCE_DIR="/home/"
+SOURCE_DIR="$HOME/"
 DESTINATION_DIR="/mnt/Backup/home/"
 
-RSYNC_EXCLUDES="--exclude='.*' --exclude='Downloads/'"
+RSYNC_EXCLUDES="--exclude=/.cache/ --exclude=/.Trash-*/ --exclude=/Downloads/ --exclude=/.??*"
 
 RSYNC_COMMAND="rsync -av $RSYNC_EXCLUDES $SOURCE_DIR $DESTINATION_DIR"
 RSYNC_COMMAND_WITH_DELETE="$RSYNC_COMMAND --delete"
