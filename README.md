@@ -1,6 +1,6 @@
 # What is it?
 
-This script runs in the background, syncing one directory to another using rsync, and prompts the user via kdialog when needed.
+Add this script to your autostart to run in the background, syncing one directory to another with rsync and prompting the user via kdialog when needed.
 
 # Benefits
 
